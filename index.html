@@ -267,6 +267,8 @@
     *{transition:none!important;animation:none!important}
   }
 </style>
+<!-- EmailJS: envía el correo directamente desde el navegador, sin backend propio -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 </head>
 <body>
 
@@ -568,9 +570,9 @@ const AREA_MARCA = {
 ----------------------------------------------------------------------- */
 const ENVIO = {
   activo: true,
-  metodo: 'formsubmit',
+  metodo: 'emailjs',
   ejecutivos: [
-    { nombre: 'Fernando Silva', correo: 'fernando.silva@fondonorma.org.ve' },
+    { nombre: 'Fernando Silva', correo: 'planificadorventas@gmail.com' },
     { nombre: 'Inés Conde',     correo: 'ines.conde@fondonorma.org.ve' }
   ],
   copiaAlParticipante: true
@@ -579,6 +581,23 @@ ENVIO.principal = ENVIO.ejecutivos[0].correo;
 ENVIO.copias    = ENVIO.ejecutivos.slice(1).map(e => e.correo);
 ENVIO.nombres   = ENVIO.ejecutivos.map(e => e.nombre).join(' y ');
 ENVIO.lista     = ENVIO.ejecutivos.map(e => `${e.nombre} <${e.correo}>`).join('\n              ');
+
+/* ---- Credenciales de EmailJS --------------------------------------------
+   Reemplace estos 3 valores con los de SU cuenta en https://www.emailjs.com
+   1) PUBLIC_KEY  -> Account > General > Public Key
+   2) SERVICE_ID  -> Email Services > su servicio conectado (Gmail/Outlook/SMTP)
+   3) TEMPLATE_ID -> Email Templates > su plantilla
+   La plantilla debe tener variables con estos nombres exactos:
+   {{to_email}} {{cc_email}} {{subject}} {{from_name}} {{reply_to}}
+   {{inscripcion_id}} {{fecha}} {{participante}} {{documento}} {{telefono}}
+   {{ciudad}} {{programas}} {{inversion}} {{mensaje}}
+----------------------------------------------------------------------- */
+const EMAILJS = {
+  publicKey:  '6YYJNLr9BgLV5GXT6',
+  serviceId:  'service_93j0n2c',
+  templateId: 'template_ql1cbp9'
+};
+if (window.emailjs) emailjs.init({ publicKey: EMAILJS.publicKey });
 
 /* =========================================================
    UTILIDADES
@@ -1105,30 +1124,44 @@ async function despachar(o){
 async function enviar(o){
   const cuerpo = textoInscripcion(o);
   const asunto = `Solicitud de inscripción ${o.id} · ${o.codigoParticipante} · ${PART.nombre}`;
+
+  if(!window.emailjs){
+    console.error('EmailJS no cargó. Revise su conexión o el bloqueador de scripts.');
+    return false;
+  }
+  if(EMAILJS.publicKey === 'TU_PUBLIC_KEY'){
+    console.error('Falta configurar EMAILJS (publicKey/serviceId/templateId) en el código.');
+    return false;
+  }
+
+  const copias = ENVIO.copias.slice();
+  if(ENVIO.copiaAlParticipante) copias.push(PART.correo);
+
+  const parametros = {
+    to_email:       ENVIO.principal,
+    cc_email:       copias.join(','),
+    subject:        asunto,
+    from_name:      'Departamento de Formación',
+    reply_to:       PART.correo,
+    inscripcion_id: o.id,
+    fecha:          o.fecha,
+    participante:   `${PART.codigo} · ${PART.nombre}`,
+    documento:      PART.doc,
+    telefono:       PART.tel,
+    ciudad:         PART.ciudad,
+    programas:      o.lineas.map(l => `${l.ref} x${l.cupos} — ${l.titulo}`).join(' | '),
+    inversion:      money(o.total) + ' + IVA',
+    mensaje:        cuerpo
+  };
+
   try{
-    const fd = new FormData();
-    fd.append('_subject', asunto);
-    fd.append('_template', 'box');
-    fd.append('_captcha', 'false');
-    fd.append('from_name', 'Departamento de Formación');
-    fd.append('name', PART.nombre);
-    fd.append('email', PART.correo);
-    const copias = ENVIO.copias.slice();
-    if(ENVIO.copiaAlParticipante) copias.push(PART.correo);
-    if(copias.length) fd.append('_cc', copias.join(','));
-    fd.append('Inscripción', o.id);
-    fd.append('Fecha', o.fecha);
-    fd.append('Participante', `${PART.codigo} · ${PART.nombre}`);
-    fd.append('RIF o cedula', PART.doc);
-    fd.append('Telefono', PART.tel);
-    fd.append('Ciudad', PART.ciudad);
-    fd.append('Programas', o.lineas.map(l => `${l.ref} x${l.cupos} — ${l.titulo}`).join(' | '));
-    fd.append('Inversion estimada', money(o.total) + ' + IVA');
-    fd.append('Solicitud completa', cuerpo);
-    const r = await fetch('https://formsubmit.co/ajax/' + encodeURIComponent(ENVIO.principal), { method:'POST', body: fd });
-    const j = await r.json().catch(()=>null);
-    return r.ok && (!j || j.success === true || j.success === 'true');
-  }catch(e){ return false; }
+    const r = await emailjs.send(EMAILJS.serviceId, EMAILJS.templateId, parametros);
+    console.log('EmailJS status:', r.status, r.text);
+    return r.status === 200;
+  }catch(e){
+    console.error('Error de envío (EmailJS):', e);
+    return false;
+  }
 }
 
 $('#mailBtn').addEventListener('click', () => {
