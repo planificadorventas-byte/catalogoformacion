@@ -1083,6 +1083,7 @@ $('#goOrder').addEventListener('click', () => {
   $('#confirm').classList.add('show');
   $('#dfoot').style.display = 'none';
   $('#ditems').style.display = 'none';
+  forzarRepintado($('#confirm'));
   CARRO = []; jset(K.cart, CARRO); actualizar();
   despachar(o);
 });
@@ -1107,6 +1108,20 @@ function pintarEnvio(estado){
       Su inscripción quedó guardada. Use el botón “Enviar desde mi correo” de abajo o vuelva a intentarlo.
       <button class="retry" onclick="despachar(ultima)">Reintentar envío</button></span>`;
   }
+  forzarRepintado(b);
+}
+
+/* Fuerza al motor de render a descartar cualquier capa/fotograma "en caché" y
+   repintar limpio. Necesario porque en algunos Chrome/WebView de Android el
+   cambio de innerHTML justo después de mostrar el panel (.confirm.show) puede
+   dejar restos visuales de un estado anterior superpuestos al nuevo. */
+function forzarRepintado(el){
+  el.style.transform = 'translateZ(0)';
+  void el.offsetHeight;      // fuerza un reflow síncrono
+  requestAnimationFrame(() => {
+    el.style.transform = '';
+    void el.offsetHeight;    // segundo reflow tras el siguiente frame
+  });
 }
 
 async function despachar(o){
